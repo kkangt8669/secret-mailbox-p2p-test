@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#b9cddd">
-<title>Secret Mailbox · 자동 P2P 시험판 V1.2.8</title>
+<title>Secret Mailbox · 자동 P2P 시험판 V1.2.9</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#bbcfdd;color:#223342;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;font-size:14px}
 main{max-width:620px;min-height:100dvh;margin:auto;padding:18px 14px 30px}
@@ -25,7 +25,7 @@ summary{cursor:pointer;font-weight:700;padding:5px 0}pre{white-space:pre-wrap;ov
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
 </head>
 <body><main>
-<div class="header"><div class="brand">SM</div><div><h1>Secret Mailbox · P2P ICE 원인 진단 V1.2.8</h1><div class="sub">Wi-Fi ↔ 4G·5G · 연결 정보 복사 불필요 · TURN 미사용</div></div></div>
+<div class="header"><div class="brand">SM</div><div><h1>Secret Mailbox · P2P 경로 정밀 진단 V1.2.9</h1><div class="sub">Wi-Fi ↔ 4G·5G · 연결 정보 복사 불필요 · TURN 미사용</div></div></div>
 <section class="card">
 <h2>① 두 스마트폰 설정</h2>
 <div class="grid"><div><label for="room">방 번호</label><input id="room" inputmode="numeric" value="1001" maxlength="16"></div><div><label for="role">내 스마트폰 역할</label><select id="role"><option value="A">A · 첫 번째</option><option value="B">B · 두 번째</option></select></div></div>
@@ -42,7 +42,7 @@ summary{cursor:pointer;font-weight:700;padding:5px 0}pre{white-space:pre-wrap;ov
 <div class="small" id="queueStatus" aria-live="polite">전송 대기: 0건</div>
 <div class="small">연결되지 않을 때도 메시지는 이 스마트폰 브라우저에 암호문으로 저장됨. 재연결되면 자동 전송하며 상대방의 저장 확인(ACK)을 받은 후에만 대기 목록에서 제거함. 브라우저 데이터를 삭제하면 미전달 메시지가 사라질 수 있음.</div>
 </section>
-<section class="card"><div class="small" id="diag" aria-live="polite">연결 진단: 대기 중</div><details open><summary>연결 진단 로그 보기</summary><pre id="log">준비됨</pre><div class="actions"><button class="secondary" id="copylog" type="button">진단 로그 복사</button></div></details><div class="small">A만 최초 연결을 요청하고 B는 수신에 집중함. 이번 버전은 실제 후보쌍 검사 응답을 확인하는 진단판임. 후보가 ICE checking 중일 때 중복 요청으로 덮어쓰지 않으며, 진단 로그에 ICE 후보쌍의 검사 요청·응답 횟수를 표시함. 메시지는 로컬 보관 후 ACK를 확인함. 네트워크를 Wi-Fi ↔ LTE 전환 후 PING/PONG으로 상대방 응답을 확인함. 응답이 없으면 기존 채널을 폐기하고 자동으로 새 연결을 시도함. 백그라운드 메시지 수신은 보장하지 않음.</div></section>
+<section class="card"><div class="small" id="diag" aria-live="polite">연결 진단: 대기 중</div><details open><summary>연결 진단 로그 보기</summary><pre id="log">준비됨</pre><div class="actions"><button class="secondary" id="inspect" type="button">현재 연결 정밀 진단</button><button class="secondary" id="stunprobe" type="button">독립 STUN 점검</button><button class="secondary" id="copylog" type="button">진단 로그 복사</button></div><div class="small">ICE 로그에는 실제 IP·mDNS 호스트명·SDP 원문을 기록하지 않음. 연결 실패 후보다 ICE checking 중 진단이 유효함. PeerJS 외부 라이브러리와 비교하려면 함께 제공된 direct_webrtc_test.html을 이용함.</div></details><div class="small">A만 최초 연결을 요청하고 B는 수신에 집중함. 이번 버전은 ICE 후보의 주소 계열·mDNS·UDP/TCP와 SDP 협상 정보를 개인정보 없이 진단함. 후보가 ICE checking 중일 때 중복 요청으로 덮어쓰지 않으며, 진단 로그에 ICE 후보쌍의 검사 요청·응답 횟수를 표시함. 메시지는 로컬 보관 후 ACK를 확인함. 네트워크를 Wi-Fi ↔ LTE 전환 후 PING/PONG으로 상대방 응답을 확인함. 응답이 없으면 기존 채널을 폐기하고 자동으로 새 연결을 시도함. 백그라운드 메시지 수신은 보장하지 않음.</div></section>
 </main>
 <script>
 'use strict';
@@ -68,6 +68,57 @@ function backoff(){const n=Math.min(burstAttempts,6);return Math.min(RETRY_CAP_M
 // 진단에는 후보 주소(IP)를 기록하지 않음. 유형/개수만 수집.
 // RTCStats API: candidate addresses/IPs are never included in diagnostics.
 // A snapshot is captured WHILE the PeerConnection is alive, before the timeout closes it.
+// V1.2.9: No IP addresses, actual mDNS hostnames, ICE passwords or SDP bodies in logs.
+function parseCandidateLine(s){
+ const line=String(s||'').trim();if(!line.startsWith('a=candidate:')&&!line.startsWith('candidate:'))return null;
+ const a=line.replace(/^a=/,'').split(/\s+/),t=a.indexOf('typ');
+ const proto=(a[2]||'?').toLowerCase(),address=a[4]||'',kind=t>=0?(a[t+1]||'?'):'?';
+ const family=address.endsWith('.local')?'mDNS':address.includes(':')?'IPv6':/^\d{1,3}(\.\d{1,3}){3}$/.test(address)?'IPv4':'기타';
+ return {kind,proto,family,relayProtocol:(a.indexOf('tcptype')>=0?a[a.indexOf('tcptype')+1]:'')};
+}
+function classifyCandidates(lines){
+ const details={},items=[];
+ for(const s of lines){const x=parseCandidateLine(s);if(!x)continue;items.push(x);const k=x.kind+'/'+x.proto+'/'+x.family+(x.relayProtocol?'/'+x.relayProtocol:'');details[k]=(details[k]||0)+1;}
+ return {items,summary:Object.entries(details).map(([k,n])=>k+':'+n).join(' | ')||'없음'};
+}
+function sdpSummary(desc){
+ if(!desc?.sdp)return 'SDP 없음';
+ const lines=desc.sdp.split(/\r?\n/),out=classifyCandidates(lines);
+ const type=desc.type||'?',media=lines.filter(x=>x.startsWith('m=')).map(x=>x.split(' ')[0].slice(2)).join(',')||'없음';
+ const iceU=lines.filter(x=>x.startsWith('a=ice-ufrag:')).length,iceP=lines.filter(x=>x.startsWith('a=ice-pwd:')).length;
+ const fingerprint=lines.some(x=>x.startsWith('a=fingerprint:'))?'있음':'없음';
+ return `${type} · 미디어 ${media} · ICE계정 ${iceU}/${iceP} · 지문 ${fingerprint} · 후보 ${out.items.length}(${out.summary})`;
+}
+function logSdpSnapshot(c,label){
+ const pc=c?.peerConnection;if(!pc)return;
+ writeLog(`[SDP ${label}] local: ${sdpSummary(pc.localDescription)}`);
+ writeLog(`[SDP ${label}] remote: ${sdpSummary(pc.remoteDescription)}`);
+ writeLog(`[네트워크 ${label}] ICE ${pc.iceConnectionState||'?'} · 수집 ${pc.iceGatheringState||'?'} · 시그널 ${pc.signalingState||'?'}`);
+}
+function networkInfo(){
+ const nc=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+ // effectiveType, type and RTT are hints, not actual proof that ICE uses that interface.
+ return '브라우저 연결 힌트 '+(nc?.type||'제공 안 됨')+' / '+(nc?.effectiveType||'미제공')+' · 온라인 '+navigator.onLine+' · WebRTC '+(typeof RTCPeerConnection==='function'?'지원':'미지원');
+}
+let stunProbeRunning=false;
+async function runIndependentStunProbe(){
+ if(stunProbeRunning){writeLog('[단독 STUN] 이미 실행 중');return}
+ stunProbeRunning=true;writeLog('[단독 STUN] PeerJS와 무관하게 후보 수집 시작 · '+networkInfo());
+ let pc=null,timer;
+ try{
+  pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}],iceTransportPolicy:'all'});
+  const found=[];pc.createDataChannel('probe');
+  pc.addEventListener('icecandidate',e=>{if(e.candidate?.candidate)found.push(e.candidate.candidate)});
+  const complete=new Promise(resolve=>{timer=setTimeout(()=>resolve('시간 제한'),9000);pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(timer);resolve('수집 완료')}})});
+  await pc.setLocalDescription(await pc.createOffer());const status=await complete;
+  const sdp=classifyCandidates((pc.localDescription?.sdp||'').split(/\r?\n/));
+  const events=classifyCandidates(found);
+  writeLog('[단독 STUN] '+status+' · 이벤트 '+events.items.length+'('+events.summary+') · SDP '+sdp.items.length+'('+sdp.summary+')');
+  if(!events.items.some(x=>x.kind==='srflx')&&!sdp.items.some(x=>x.kind==='srflx'))writeLog('[단독 STUN] srflx 없음: STUN 접근/UDP 경로를 추가 확인할 필요 있음. 직접 연결 불가능을 뜻하지는 않음');
+ }catch(e){writeLog('[단독 STUN 오류] '+(e.message||e))}
+ finally{clearTimeout(timer);try{pc?.close()}catch{}stunProbeRunning=false}
+}
+
 function statsNum(x,key){return typeof x[key]==='number'?x[key]:null}
 async function iceSummary(c,label='후보'){
  const pc=c?.peerConnection;if(!pc||typeof pc.getStats!=='function')return;
@@ -95,6 +146,7 @@ async function iceSummary(c,label='후보'){
   writeLog(`[ICE 후보쌍 ${label}] ${lastPairProbeSummary} · 수신요청${summed('requestsReceived')} / 응답전송${summed('responsesSent')}`);
   if(topPairs.length)writeLog(`[ICE 상위 후보쌍] ${topPairs.join(' | ')}`);
   else writeLog('[ICE 상위 후보쌍] 브라우저에서 후보 쌍 통계를 제공하지 않음');
+  if(['3초','9초','수집 완료','연결 성공','ICE disconnected'].includes(label))logSdpSnapshot(c,label);
   updateDiagnostics();
  }catch(e){writeLog('[ICE 진단 오류] '+String(e.message||e))}
 }
@@ -268,7 +320,10 @@ function attach(c){
   else if(conn===c)disconnected('채널 오류');
  });
  const pc=c.peerConnection;
- if(pc){pc.addEventListener?.('iceconnectionstatechange',()=>{writeLog('ICE '+pc.iceConnectionState);updateDiagnostics();if(['failed','disconnected','connected','completed'].includes(pc.iceConnectionState))reportAttempt(c,'ICE '+pc.iceConnectionState);});pc.addEventListener?.('icegatheringstatechange',()=>{writeLog('ICE 수집 '+pc.iceGatheringState);if(pc.iceGatheringState==='complete')reportAttempt(c,'수집 완료')});}
+ if(pc){
+  // Passive listeners only: do not overwrite PeerJS's own ICE/SDP handlers.
+  let added=0,types={};pc.addEventListener('icecandidate',e=>{if(!e.candidate?.candidate)return;added++;const item=parseCandidateLine(e.candidate.candidate);if(item){const key=item.kind+'/'+item.proto+'/'+item.family;types[key]=(types[key]||0)+1;}if(added===1||added%5===0)writeLog('[ICE 후보 이벤트] '+added+'개 · '+Object.entries(types).map(([k,n])=>k+':'+n).join(' | '));});
+  pc.addEventListener('signalingstatechange',()=>{writeLog('SDP 신호 상태 '+pc.signalingState);if(pc.signalingState==='stable')logSdpSnapshot(c,'협상 완료');});pc.addEventListener?.('iceconnectionstatechange',()=>{writeLog('ICE '+pc.iceConnectionState);updateDiagnostics();if(['failed','disconnected','connected','completed'].includes(pc.iceConnectionState))reportAttempt(c,'ICE '+pc.iceConnectionState);});pc.addEventListener?.('icegatheringstatechange',()=>{writeLog('ICE 수집 '+pc.iceGatheringState);if(pc.iceGatheringState==='complete')reportAttempt(c,'수집 완료')});}
 
 }
 function connectOther(){
@@ -359,7 +414,7 @@ async function start(){
   await initSecrets();active=true;connectAttempts=0;connectSucceeded=0;failures=0;burstAttempts=0;attemptSerial=0;lastFailure='';lastCandidateSummary='없음';lastPairProbeSummary='검사 전';
   $('start').disabled=true;$('role').disabled=true;$('room').disabled=true;$('pin').disabled=true;
   $('message').disabled=false;$('send').disabled=false;
-  updateQueueStatus();writeLog('자동 연결 시작 ('+$('role').value+') · 로컬 대기 '+getQueue().length+'건');bootPeer();healthTimer=setInterval(checkHealth,PING_INTERVAL_MS)
+  updateQueueStatus();writeLog('자동 연결 시작 ('+$('role').value+') · 로컬 대기 '+getQueue().length+'건');writeLog('[환경] '+networkInfo());bootPeer();healthTimer=setInterval(checkHealth,PING_INTERVAL_MS)
  }catch(e){writeLog('시작 실패: '+e.message);showState(e.message,'bad')}
 }
 function stop(){
@@ -404,8 +459,9 @@ function networkRecovery(reason){
   updateDiagnostics();
  },1200)
 }
+$('inspect').onclick=()=>{writeLog('[수동 진단] '+networkInfo());const c=candidate?.c||conn;if(c){logSdpSnapshot(c,'수동');iceSummary(c,'수동')}else writeLog('[수동 진단] 연결 후보 없음. 연결 시작 후 ICE checking 중 다시 실행');};$('stunprobe').onclick=runIndependentStunProbe;
 $('start').onclick=start;$('stop').onclick=stop;$('retry').onclick=restart;$('send').onclick=send;
-$('copylog').onclick=async()=>{const body='Secret Mailbox V1.2.8\n'+$('diag').textContent+'\n'+$('log').textContent;try{await navigator.clipboard.writeText(body);writeLog('진단 로그 복사 완료')}catch{writeLog('클립보드 복사 실패: HTTPS·권한 확인')}};
+$('copylog').onclick=async()=>{const body='Secret Mailbox V1.2.9\n'+$('diag').textContent+'\n'+$('log').textContent;try{await navigator.clipboard.writeText(body);writeLog('진단 로그 복사 완료')}catch{writeLog('클립보드 복사 실패: HTTPS·권한 확인')}};
 $('message').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();send()}});
 window.addEventListener('online',()=>networkRecovery('인터넷 재연결'));
 if(navigator.connection?.addEventListener)navigator.connection.addEventListener('change',()=>networkRecovery('인터넷 접속 유형 변경'));
