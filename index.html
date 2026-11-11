@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#b9cddd">
-<title>Secret Mailbox · 자동 P2P 시험판 V1.2.5</title>
+<title>Secret Mailbox · 자동 P2P 시험판 V1.2.6</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#bbcfdd;color:#223342;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;font-size:14px}
 main{max-width:620px;min-height:100dvh;margin:auto;padding:18px 14px 30px}
@@ -25,7 +25,7 @@ summary{cursor:pointer;font-weight:700;padding:5px 0}pre{white-space:pre-wrap;ov
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
 </head>
 <body><main>
-<div class="header"><div class="brand">SM</div><div><h1>Secret Mailbox · P2P 자동 연결 시험 V1.2.5</h1><div class="sub">Wi-Fi ↔ 4G·5G · 연결 정보 복사 불필요</div></div></div>
+<div class="header"><div class="brand">SM</div><div><h1>Secret Mailbox · P2P 자동 연결 시험 V1.2.6</h1><div class="sub">Wi-Fi ↔ 4G·5G · 연결 정보 복사 불필요</div></div></div>
 <section class="card">
 <h2>① 두 스마트폰 설정</h2>
 <div class="grid"><div><label for="room">방 번호</label><input id="room" inputmode="numeric" value="1001" maxlength="16"></div><div><label for="role">내 스마트폰 역할</label><select id="role"><option value="A">A · 첫 번째</option><option value="B">B · 두 번째</option></select></div></div>
@@ -42,20 +42,26 @@ summary{cursor:pointer;font-weight:700;padding:5px 0}pre{white-space:pre-wrap;ov
 <div class="small" id="queueStatus" aria-live="polite">전송 대기: 0건</div>
 <div class="small">연결되지 않을 때도 메시지는 이 스마트폰 브라우저에 암호문으로 저장됨. 재연결되면 자동 전송하며 상대방의 저장 확인(ACK)을 받은 후에만 대기 목록에서 제거함. 브라우저 데이터를 삭제하면 미전달 메시지가 사라질 수 있음.</div>
 </section>
-<section class="card"><details><summary>연결 진단 로그 보기</summary><pre id="log">준비됨</pre></details><div class="small">연결이 확인된 동안 5초 간격 상태 점검, 수신 확인 없을 경우 약 8.5초 후 대기 메시지 재전송을 시도함. 네트워크를 Wi-Fi ↔ LTE 전환 후 PING/PONG으로 상대방 응답을 확인함. 응답이 없으면 기존 채널을 폐기하고 자동으로 새 연결을 시도함. 백그라운드 메시지 수신은 보장하지 않음.</div></section>
+<section class="card"><div class="small" id="diag" aria-live="polite">연결 진단: 대기 중</div><details><summary>연결 진단 로그 보기</summary><pre id="log">준비됨</pre></details><div class="small">연결 상태를 검증하고 재시도 횟수를 제한함. 메시지는 로컬 보관 후 ACK를 확인함. 네트워크를 Wi-Fi ↔ LTE 전환 후 PING/PONG으로 상대방 응답을 확인함. 응답이 없으면 기존 채널을 폐기하고 자동으로 새 연결을 시도함. 백그라운드 메시지 수신은 보장하지 않음.</div></section>
 </main>
 <script>
 'use strict';
 const $=id=>document.getElementById(id),enc=new TextEncoder(),dec=new TextDecoder();
 let peer=null,conn=null,cryptoKey=null,active=false,roomStore='',myId='',theirId='',epoch=0;
 let retryTimer=null,pendingTimer=null,healthTimer=null,networkTimer=null,pendingConn=null,sendLock=false;
+let candidate=null,candidateTimer=null,signalRetryTimer=null,signalRetryCount=0,connectionStartedAt=0,verifiedSession=0;
+let nextReconnectAt=0,lastFailure="",lastNetworkChangeAt=0,failures=0,connectSucceeded=0;
 let verified=false,channelOpenedAt=0,lastPongAt=0,pingId='',pingSentAt=0,seq=0,connectAttempts=0;
-const PING_INTERVAL_MS=5000,PONG_TIMEOUT_MS=18000,VERIFY_TIMEOUT_MS=13000;
+const PING_INTERVAL_MS=5000,PONG_TIMEOUT_MS=18000,VERIFY_TIMEOUT_MS=16000;
+const CONNECT_TIMEOUT_MS=18000,RETRY_CAP_MS=20000;
 const ACK_RETRY_MS=8500,MAX_QUEUE_ITEMS=500,MAX_SENDS_PER_TICK=20;
 const pendingSends=new Map();let retryAttempts=0,ackedTotal=0,sessionConnectedAt=0;
 const b64=a=>btoa(String.fromCharCode(...a)),fromB64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 function writeLog(s){const n=new Date().toLocaleTimeString('ko-KR',{hour12:false});$('log').textContent+='\n'+n+' '+s;$('log').scrollTop=$('log').scrollHeight;}
-function showState(s,mode='',detail=''){$('state').textContent=s;$('detail').textContent=detail;$('status').className='status '+mode}
+function showState(s,mode='',detail=''){$('state').textContent=s;$('detail').textContent=detail;$('status').className='status '+mode;updateDiagnostics()}
+function updateDiagnostics(){const n=$('diag');if(!n)return;let ice='없음';try{ice=conn?.peerConnection?.iceConnectionState||candidate?.c?.peerConnection?.iceConnectionState||'없음'}catch{}n.textContent=`중개 ${peer?.open?'등록됨':peer?.disconnected?'재연결 중':'대기'} · 채널 ${verified?'검증됨':conn?.open?'확인 중':'대기'} · ICE ${ice} · 연결시도 ${connectAttempts} · 성공 ${connectSucceeded} · 실패 ${failures}${lastFailure?' · 최근 '+lastFailure:''}`}
+function noteFailure(msg){lastFailure=msg;failures++;writeLog('연결 문제: '+msg);updateDiagnostics()}
+function backoff(){const n=Math.min(connectAttempts,6);return Math.min(RETRY_CAP_MS,1200*Math.pow(1.6,n))+Math.floor(Math.random()*750)}
 function bubble(s,cls){const n=document.createElement('div');n.className=cls==='sys'?'sys':'bubble '+cls;n.textContent=s;$('chat').append(n);$('chat').scrollTop=$('chat').scrollHeight;}
 async function sha(s){return new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(s)))}
 async function initSecrets(){
@@ -77,27 +83,33 @@ function updateQueueStatus(){
  const el=$('queueStatus');if(el)el.textContent=`이 기기 전송 대기: ${count}건 · 수신 확인: ${ackedTotal}건`;
 }
 function isConnected(){return !!(conn&&conn.open&&verified)}
-function clearTimers(){clearTimeout(pendingTimer);pendingTimer=null;clearTimeout(retryTimer);retryTimer=null;}
+function clearTimers(){clearTimeout(pendingTimer);pendingTimer=null;clearTimeout(retryTimer);retryTimer=null;clearTimeout(candidateTimer);candidateTimer=null;clearTimeout(signalRetryTimer);signalRetryTimer=null;}
 function closeChannel(c){if(c){try{c.close()}catch{}}}
 function disconnected(reason){
  if(!active)return;
- writeLog('연결 유효성 상실: '+reason);
+ noteFailure(reason);
  const old=conn;conn=null;verified=false;pingId='';pingSentAt=0;channelOpenedAt=0;lastPongAt=0;
- pendingSends.clear();
- closeChannel(old);if(pendingConn===old)pendingConn=null;
+ pendingSends.clear();closeChannel(old);
  $('message').disabled=false;$('send').disabled=false;
  showState('상대방 대기','','연결 복구 중 · 메시지는 기기에 보관');
- if($('role').value==='A')scheduleConnect(900);
+ // Passive side always accepts an incoming peer; initiator requests again.
+ if($('role').value==='A')scheduleConnect(backoff());
 }
 async function sendPacket(obj,c=conn){
  if(!active||!c?.open)return false;
  try{const packet=await encrypt(obj);if(!active||!c.open)return false;c.send(packet);return true}catch(e){writeLog('패킷 송신 오류: '+e.message);return false}
 }
 async function sendPing(c=conn){
- if(!c?.open||conn!==c||!active)return;
- if(pingId)return; // avoid flooding with simultaneous probes
- const id=(++seq)+'-'+Date.now();pingId=id;pingSentAt=Date.now();
- if(!await sendPacket({type:'ping',id},c)&&conn===c)disconnected('PING 전송 실패');
+ if(!c?.open||!active)return;
+ if(c!==conn && c!==candidate?.c)return;
+ if(c===conn){
+  if(pingId)return;
+  const id=(++seq)+'-'+Date.now();pingId=id;pingSentAt=Date.now();
+  if(!await sendPacket({type:'ping',id},c)&&conn===c)disconnected('PING 송신 실패');
+ }else if(candidate?.c===c && !candidate.pingId){
+  candidate.pingId=(++seq)+'-'+Date.now();
+  await sendPacket({type:'ping',id:candidate.pingId},c);
+ }
 }
 async function sendQueue(force=false){
  if(!isConnected()||sendLock)return;
@@ -121,17 +133,26 @@ async function sendQueue(force=false){
  }finally{sendLock=false;updateQueueStatus()}
 }
 async function receive(data,c){
- if(!active||c!==conn)return;
+ if(!active||(c!==conn&&c!==candidate?.c))return;
  try{
-  const x=await decrypt(data);if(c!==conn||!active)return;
+  const x=await decrypt(data);
+  if(!active||(c!==conn&&c!==candidate?.c))return;
   if(x.type==='ping'&&typeof x.id==='string'){
-   await sendPacket({type:'pong',id:x.id},c);return;
-  }
-  if(x.type==='pong'&&x.id===pingId){
-   pingId='';pingSentAt=0;lastPongAt=Date.now();
-   if(!verified){verified=true;sessionConnectedAt=Date.now();showState('P2P 연결 성공','good','상대방 응답 확인 ✓');writeLog('[VERIFIED] 양방향 PING/PONG 성공');sendQueue(true)}
+   await sendPacket({type:'pong',id:x.id},c);
    return;
   }
+  if(x.type==='pong'){
+   if(c===candidate?.c&&x.id===candidate.pingId){
+    promoteCandidate(c);return;
+   }
+   if(c===conn&&x.id===pingId){
+    pingId='';pingSentAt=0;lastPongAt=Date.now();
+    if(!verified){verified=true;connectSucceeded++;sessionConnectedAt=Date.now();showState('P2P 연결 성공','good','상대방 응답 확인 ✓');writeLog('[VERIFIED] 양방향 응답 성공');sendQueue(true)}
+   }
+   return;
+  }
+  // Never accept message/ACK from an unverified candidate.
+  if(c!==conn||!verified)return;
   if(x.type==='msg'&&typeof x.text==='string'&&typeof x.id==='string'){
    const key=roomStore+'-seen',seen=JSON.parse(localStorage.getItem(key)||'[]');
    if(!seen.includes(x.id)){seen.push(x.id);localStorage.setItem(key,JSON.stringify(seen.slice(-3000)));bubble(x.text,'theirs')}
@@ -141,107 +162,139 @@ async function receive(data,c){
   }
  }catch(e){writeLog('수신 처리 오류: '+e.message)}
 }
+function promoteCandidate(c){
+ if(!active||candidate?.c!==c||!c.open)return;
+ const old=conn;candidate=null;clearTimeout(candidateTimer);candidateTimer=null;
+ conn=c;verified=true;connectSucceeded++;lastPongAt=Date.now();pingId='';pingSentAt=0;
+ pendingSends.clear();if(pendingConn===c)pendingConn=null;
+ clearTimeout(pendingTimer);pendingTimer=null;clearTimeout(retryTimer);retryTimer=null;
+ showState('P2P 연결 성공','good','상대방 응답 확인 ✓');
+ writeLog('[VERIFIED] 새 채널 전환 성공 · 이전 채널 정리');
+ if(old&&old!==c)closeChannel(old);
+ sendQueue(true);
+}
 function scheduleConnect(wait=2500){
- if(!active||$('role').value!=='A'||isConnected()||pendingConn)return;
+ if(!active||$('role').value!=='A'||isConnected()||pendingConn||candidate)return;
  clearTimeout(retryTimer);const at=epoch;
- retryTimer=setTimeout(()=>{retryTimer=null;if(active&&at===epoch&&!isConnected()&&!pendingConn)connectOther()},wait);
+ retryTimer=setTimeout(()=>{retryTimer=null;if(active&&at===epoch&&!isConnected()&&!pendingConn&&!candidate)connectOther()},Math.max(400,wait));
 }
 function attach(c){
  if(!active||!c)return;
- if(c.peer!==theirId){writeLog('예상하지 않은 연결 거부');closeChannel(c);return}
- if($('role').value==='A'&&c!==pendingConn){writeLog('A에 대한 예상하지 않은 역방향 연결 거부');closeChannel(c);return}
- // On B, a newly arriving connection is accepted even if old DataChannel says OPEN.
- // A network switch can leave that flag stale on the opposite device.
- writeLog('DataChannel 연결 요청 수신: '+(conn?.open?'기존 채널 교체 후보':'신규 채널'));
+ if(c.peer!==theirId){writeLog('예상하지 않은 상대 거부');closeChannel(c);return}
+ if($('role').value==='A'&&c!==pendingConn){writeLog('A 역방향 연결 거부');closeChannel(c);return}
+ if(candidate?.c && candidate.c!==c){
+  // Do not allow overlapping offers to race. B may accept a later fresh candidate.
+  if($('role').value==='B'){
+   writeLog('이전 미검증 후보를 새 요청으로 교체');closeChannel(candidate.c);clearTimeout(candidateTimer);candidate=null;
+  }else{closeChannel(c);return}
+ }
+ writeLog('DataChannel 요청 '+(conn?.open?'(기존 채널 유지하며 확인)':'(초기 연결)'));
+ candidate={c,pingId:'',openedAt:0};
  let opened=false;
- const watchdog=setTimeout(()=>{
-  if(!opened){writeLog('후보 연결 시간 초과');if(pendingConn===c)pendingConn=null;closeChannel(c);if($('role').value==='A')scheduleConnect(1700)}
- },12000);
+ const at=epoch;
+ candidateTimer=setTimeout(()=>{
+  if(!active||at!==epoch||candidate?.c!==c)return;
+  noteFailure('후보 채널 응답 제한 시간 초과');candidate=null;if(pendingConn===c)pendingConn=null;
+  closeChannel(c);if($('role').value==='A')scheduleConnect(backoff());
+ },CONNECT_TIMEOUT_MS);
  c.on('open',()=>{
-  if(!active||opened)return;
-  opened=true;clearTimeout(watchdog);
-  const old=conn;conn=c;verified=false;channelOpenedAt=Date.now();lastPongAt=0;pingId='';pingSentAt=0;
-  if(pendingConn===c)pendingConn=null;
-  clearTimeout(pendingTimer);pendingTimer=null;clearTimeout(retryTimer);retryTimer=null;
-  showState('상대방 확인 중','','연결 후 응답 검사');
-  writeLog('[CHANNEL OPEN] 상대방 응답 검사 시작');
-  if(old&&old!==c){writeLog('이전 DataChannel 폐기');closeChannel(old)}
+  if(!active||at!==epoch||candidate?.c!==c)return;
+  opened=true;candidate.openedAt=Date.now();
+  if(!isConnected())showState('상대방 확인 중','','실제 PING/PONG 검사');
+  writeLog('[CHANNEL OPEN] 실제 응답 확인 중');
   sendPing(c);
  });
  c.on('data',x=>receive(x,c));
  c.on('close',()=>{
-  clearTimeout(watchdog);
-  if(pendingConn===c)pendingConn=null;
-  if(!active)return;
-  if(conn===c){disconnected('DataChannel 닫힘')}
-  else if($('role').value==='A'&&!isConnected())scheduleConnect(1600);
+  if(candidate?.c===c){candidate=null;clearTimeout(candidateTimer);candidateTimer=null;if(pendingConn===c)pendingConn=null;if($('role').value==='A'&&!isConnected())scheduleConnect(backoff())}
+  if(conn===c)disconnected('채널 종료');
  });
  c.on('error',e=>{
-  writeLog('DataChannel 오류: '+(e.message||e));
-  if(conn===c)disconnected('DataChannel 오류');
+  noteFailure('채널 오류 '+(e.message||e));
+  if(candidate?.c===c){candidate=null;clearTimeout(candidateTimer);candidateTimer=null;if(pendingConn===c)pendingConn=null;closeChannel(c);if($('role').value==='A'&&!isConnected())scheduleConnect(backoff())}
+  else if(conn===c)disconnected('채널 오류');
  });
+ const pc=c.peerConnection;
+ if(pc){pc.addEventListener?.('iceconnectionstatechange',()=>{writeLog('ICE '+pc.iceConnectionState);updateDiagnostics()});}
 }
 function connectOther(){
- if(!active||!peer?.open||isConnected()||pendingConn)return;
+ if(!active||!peer?.open||isConnected()||pendingConn||candidate)return;
  try{
-  connectAttempts++;showState('상대방 찾는 중','','연결 시도 '+connectAttempts+'회');
+  connectAttempts++;connectionStartedAt=Date.now();showState('상대방 찾는 중','','연결 시도 '+connectAttempts+'회');
   const c=peer.connect(theirId,{reliable:true,serialization:'binary'});
   pendingConn=c;attach(c);
-  const at=epoch;
-  pendingTimer=setTimeout(()=>{
-   if(!active||at!==epoch||isConnected()||pendingConn!==c)return;
-   writeLog('상대방 연결 요청 응답 지연');pendingConn=null;pendingTimer=null;
-   if(conn===c)disconnected('열림 응답 지연');else closeChannel(c);
-   scheduleConnect(2200);
-  },12500)
- }catch(e){writeLog('연결 시도 오류: '+e.message);pendingConn=null;scheduleConnect(4000)}
+ }catch(e){noteFailure('연결 요청 실패 '+e.message);pendingConn=null;scheduleConnect(backoff())}
 }
 function bootPeer(reason='시작'){
  if(!active)return;
  const run=++epoch;clearTimers();
- const oldPeer=peer,old=conn;peer=null;conn=null;verified=false;pendingConn=null;pingId='';pingSentAt=0;channelOpenedAt=0;lastPongAt=0;
- closeChannel(old);try{oldPeer?.destroy()}catch{}
- showState('연결 준비 중','','중개 서버 접속');writeLog('중개 세션 갱신: '+reason+' · 로컬 대기 '+getQueue().length+'건');
+ const oldPeer=peer,old=conn,oldCandidate=candidate?.c;
+ peer=null;conn=null;candidate=null;verified=false;pendingConn=null;pingId='';pingSentAt=0;channelOpenedAt=0;lastPongAt=0;
+ closeChannel(old);if(oldCandidate!==old)closeChannel(oldCandidate);
+ try{oldPeer?.destroy()}catch{}
+ showState('연결 준비 중','','중개 서버 접속');writeLog('중개 세션 갱신: '+reason+' · 대기 '+getQueue().length+'건');
  if(typeof Peer==='undefined'){showState('프로그램 로드 실패','bad','PeerJS 스크립트 확인');return}
  peer=new Peer(myId,{secure:true,host:'0.peerjs.com',port:443,path:'/',config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}],iceTransportPolicy:'all'}});
  const p=peer;
  p.on('open',()=>{
   if(!active||run!==epoch)return;
-  writeLog('연결 중개 등록 완료');if(!isConnected())showState('상대방 대기','','연결 준비됨');
-  if($('role').value==='A')scheduleConnect(550)
+  signalRetryCount=0;writeLog('중개 등록 완료');
+  if(!isConnected())showState('상대방 대기','','연결 준비됨');
+  if($('role').value==='A')scheduleConnect(750);
  });
  p.on('connection',c=>{if(!active||run!==epoch){closeChannel(c);return}attach(c)});
  p.on('disconnected',()=>{
   if(!active||run!==epoch)return;
-  writeLog('중개 서버 연결 끊김 (P2P 유효성 독립 확인)');
-  if(!isConnected())showState('중개 서버 재접속 중','','기존 P2P 연결 점검');
-  setTimeout(()=>{if(active&&run===epoch&&!p.destroyed&&p.disconnected){try{p.reconnect()}catch{if(!isConnected())bootPeer('중개 접속 실패')}}},2200)
+  writeLog('중개 연결 끊김 · 기존 P2P 채널은 별도 검사');
+  if(!isConnected())showState('중개 재접속 중','','P2P 대기 메시지는 기기에 보관');
+  scheduleSignalingRetry(p,run);
  });
- p.on('close',()=>{if(active&&run===epoch&&!isConnected())setTimeout(()=>{if(active&&run===epoch&&!isConnected())bootPeer('세션 종료')},3500)});
+ p.on('close',()=>{if(active&&run===epoch&&!isConnected())schedulePeerReboot('중개 세션 종료',run)});
  p.on('error',err=>{
   if(!active||run!==epoch)return;
-  const t=err?.type||'error';writeLog('중개 오류: '+t+' '+(err.message||''));
+  const t=err?.type||'error';noteFailure('중개 '+t);
   if(isConnected())return;
-  if(t==='peer-unavailable'){if(pendingConn){closeChannel(pendingConn);pendingConn=null}scheduleConnect(3000);return}
-  if(t==='unavailable-id'){showState('이전 세션 정리 중','','재접속 대기');setTimeout(()=>{if(active&&run===epoch&&!isConnected())bootPeer('ID 정리 재시도')},5200);return}
-  if(['network','socket-error','server-error'].includes(t)){setTimeout(()=>{if(active&&run===epoch&&!isConnected())bootPeer('중개 오류 재시도')},5200);return}
-  showState('연결 오류','bad',t)
+  if(t==='peer-unavailable'){
+   if(pendingConn){closeChannel(pendingConn);pendingConn=null}
+   if(candidate?.c){closeChannel(candidate.c);candidate=null;clearTimeout(candidateTimer)}
+   scheduleConnect(backoff());return;
+  }
+  if(t==='unavailable-id'){
+   showState('중복 세션 확인 중','','다른 탭에 같은 역할이 열려 있는지 확인');
+   schedulePeerReboot('중복 ID 정리',run);return;
+  }
+  if(['network','socket-error','socket-closed','server-error','server-error'].includes(t)){
+   schedulePeerReboot('중개 오류',run);return;
+  }
+  showState('연결 오류','bad',t);
  });
+}
+function schedulePeerReboot(reason,run){
+ if(signalRetryTimer||!active||run!==epoch||isConnected())return;
+ const delay=Math.min(30000,3500*Math.pow(1.5,Math.min(signalRetryCount++,5)))+Math.floor(Math.random()*1000);
+ writeLog('중개 재등록 예약 '+Math.round(delay/1000)+'초');
+ signalRetryTimer=setTimeout(()=>{signalRetryTimer=null;if(active&&run===epoch&&!isConnected())bootPeer(reason)},delay);
+}
+function scheduleSignalingRetry(p,run){
+ if(signalRetryTimer||!active||run!==epoch||isConnected())return;
+ signalRetryTimer=setTimeout(()=>{
+  signalRetryTimer=null;if(!active||run!==epoch||isConnected())return;
+  try{if(p.disconnected&&!p.destroyed)p.reconnect();else if(p.destroyed)bootPeer('중개 객체 종료')}
+  catch{schedulePeerReboot('중개 재접속 실패',run)}
+ },2500+Math.floor(Math.random()*600));
 }
 function checkHealth(){
  if(!active)return;
- const now=Date.now();
+ const now=Date.now();updateDiagnostics();
  if(conn?.open){
-  if(!verified&&channelOpenedAt&&now-channelOpenedAt>VERIFY_TIMEOUT_MS){disconnected('상대방 PONG 확인 시간 초과');return}
-  if(pingId&&pingSentAt&&now-pingSentAt>PONG_TIMEOUT_MS){disconnected('PING 무응답 · 기존 채널 폐기');return}
+  // If the P2P channel is silent after a network transition, invalidate its status.
+  if(pingId&&pingSentAt&&now-pingSentAt>PONG_TIMEOUT_MS){disconnected('PING 응답 없음');return}
   if(!pingId)sendPing(conn);
   if(verified)sendQueue();
-  return
- }
- if(conn&&!conn.open)disconnected('채널 열림 상태 아님');
- if(!peer||peer.destroyed){bootPeer('상태 점검');return}
- if(peer.disconnected){try{peer.reconnect()}catch{bootPeer('재접속 오류')}}
- else if(peer.open&&$('role').value==='A'&&!pendingConn&&!retryTimer)scheduleConnect(1000)
+ }else if(conn){disconnected('채널 열림 상태 해제')}
+ if(!peer||peer.destroyed){if(!isConnected())bootPeer('중개 객체 종료');return}
+ if(peer.disconnected){if(!isConnected())scheduleSignalingRetry(peer,epoch)}
+ else if(peer.open&&$('role').value==='A'&&!isConnected()&&!pendingConn&&!candidate&&!retryTimer)scheduleConnect(backoff());
 }
 async function start(){
  if(active)return;
@@ -256,8 +309,8 @@ async function start(){
 }
 function stop(){
  active=false;epoch++;clearTimers();clearInterval(healthTimer);healthTimer=null;clearTimeout(networkTimer);networkTimer=null;
- const old=conn,oldPending=pendingConn,oldPeer=peer;conn=null;pendingConn=null;peer=null;verified=false;pingId='';
- closeChannel(old);if(oldPending!==old)closeChannel(oldPending);try{oldPeer?.destroy()}catch{}
+ const old=conn,oldPending=pendingConn,oldCandidate=candidate?.c,oldPeer=peer;conn=null;pendingConn=null;candidate=null;peer=null;verified=false;pingId='';
+ closeChannel(old);if(oldPending!==old)closeChannel(oldPending);if(oldCandidate!==old&&oldCandidate!==oldPending)closeChannel(oldCandidate);try{oldPeer?.destroy()}catch{}
  cryptoKey=null;$('start').disabled=false;$('role').disabled=false;$('room').disabled=false;$('pin').disabled=false;
  $('message').disabled=true;$('send').disabled=true;
  pendingSends.clear();updateQueueStatus();showState('종료','','연결 안 됨');writeLog('종료 · 전송 대기 메시지 기기 내 보존');
@@ -284,14 +337,23 @@ function networkRecovery(reason){
  clearTimeout(networkTimer);
  networkTimer=setTimeout(()=>{
   networkTimer=null;if(!active)return;
-  writeLog(reason+' → 통신 경로 새로 탐색');bootPeer('통신망 변경');
- },1600);
+  lastNetworkChangeAt=Date.now();writeLog(reason+' → 통신 상태 확인');
+  // PeerJS DataConnection doesn't expose a cross-browser automatic ICE renegotiation
+  // protocol. We use a new negotiated channel after a verified health failure.
+  if(conn?.open){
+   // A transient online event must not destroy a working channel.
+   if(pingId){pingSentAt=Math.min(pingSentAt,Date.now()-13000)}
+   else sendPing(conn);
+   setTimeout(()=>{if(active&&conn?.open&&pingId&&Date.now()-pingSentAt>6500)disconnected('통신망 변경 후 응답 실패')},7500)
+  }else if(!isConnected()&&$('role').value==='A')scheduleConnect(600);
+  updateDiagnostics();
+ },1200)
 }
 $('start').onclick=start;$('stop').onclick=stop;$('retry').onclick=restart;$('send').onclick=send;
 $('message').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();send()}});
 window.addEventListener('online',()=>networkRecovery('인터넷 재연결'));
 if(navigator.connection?.addEventListener)navigator.connection.addEventListener('change',()=>networkRecovery('인터넷 접속 유형 변경'));
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active){writeLog('화면 복귀 → 연결 상태 확인');checkHealth()}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active){writeLog('화면 복귀 → 상태 검사');checkHealth();if(conn?.open&&!pingId)sendPing(conn)}});
 window.addEventListener('pagehide',()=>{try{conn?.close();peer?.destroy()}catch{}});
 updateQueueStatus();
 </script>
