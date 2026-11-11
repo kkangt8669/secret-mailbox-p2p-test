@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#b9cddd">
-<title>Secret Mailbox · 자동 P2P 시험판 V1.2.9</title>
+<title>Secret Mailbox · 자동 P2P 시험판 V1.3.0</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#bbcfdd;color:#223342;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;font-size:14px}
 main{max-width:620px;min-height:100dvh;margin:auto;padding:18px 14px 30px}
@@ -25,7 +25,7 @@ summary{cursor:pointer;font-weight:700;padding:5px 0}pre{white-space:pre-wrap;ov
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
 </head>
 <body><main>
-<div class="header"><div class="brand">SM</div><div><h1>Secret Mailbox · P2P 경로 정밀 진단 V1.2.9</h1><div class="sub">Wi-Fi ↔ 4G·5G · 연결 정보 복사 불필요 · TURN 미사용</div></div></div>
+<div class="header"><div class="brand">SM</div><div><h1>Secret Mailbox · P2P 경로 정밀 진단 V1.3.0</h1><div class="sub">Wi-Fi ↔ 4G·5G · 연결 정보 복사 불필요 · TURN 미사용</div></div></div>
 <section class="card">
 <h2>① 두 스마트폰 설정</h2>
 <div class="grid"><div><label for="room">방 번호</label><input id="room" inputmode="numeric" value="1001" maxlength="16"></div><div><label for="role">내 스마트폰 역할</label><select id="role"><option value="A">A · 첫 번째</option><option value="B">B · 두 번째</option></select></div></div>
@@ -42,7 +42,7 @@ summary{cursor:pointer;font-weight:700;padding:5px 0}pre{white-space:pre-wrap;ov
 <div class="small" id="queueStatus" aria-live="polite">전송 대기: 0건</div>
 <div class="small">연결되지 않을 때도 메시지는 이 스마트폰 브라우저에 암호문으로 저장됨. 재연결되면 자동 전송하며 상대방의 저장 확인(ACK)을 받은 후에만 대기 목록에서 제거함. 브라우저 데이터를 삭제하면 미전달 메시지가 사라질 수 있음.</div>
 </section>
-<section class="card"><div class="small" id="diag" aria-live="polite">연결 진단: 대기 중</div><details open><summary>연결 진단 로그 보기</summary><pre id="log">준비됨</pre><div class="actions"><button class="secondary" id="inspect" type="button">현재 연결 정밀 진단</button><button class="secondary" id="stunprobe" type="button">독립 STUN 점검</button><button class="secondary" id="copylog" type="button">진단 로그 복사</button></div><div class="small">ICE 로그에는 실제 IP·mDNS 호스트명·SDP 원문을 기록하지 않음. 연결 실패 후보다 ICE checking 중 진단이 유효함. PeerJS 외부 라이브러리와 비교하려면 함께 제공된 direct_webrtc_test.html을 이용함.</div></details><div class="small">A만 최초 연결을 요청하고 B는 수신에 집중함. 이번 버전은 ICE 후보의 주소 계열·mDNS·UDP/TCP와 SDP 협상 정보를 개인정보 없이 진단함. 후보가 ICE checking 중일 때 중복 요청으로 덮어쓰지 않으며, 진단 로그에 ICE 후보쌍의 검사 요청·응답 횟수를 표시함. 메시지는 로컬 보관 후 ACK를 확인함. 네트워크를 Wi-Fi ↔ LTE 전환 후 PING/PONG으로 상대방 응답을 확인함. 응답이 없으면 기존 채널을 폐기하고 자동으로 새 연결을 시도함. 백그라운드 메시지 수신은 보장하지 않음.</div></section>
+<section class="card"><div class="small"><b>자동 요청 방향 전환:</b> 두 폰이 50초씩 번갈아 연결 요청을 담당함. A·B 모두 페이지를 열고 시작해야 하며, 미검증 후보만 차례 변경 시 정리함. 성공한 채널은 유지함. 휴대폰 시간 자동 설정 권장.</div><div class="small" id="diag" aria-live="polite">연결 진단: 대기 중</div><details open><summary>연결 진단 로그 보기</summary><pre id="log">준비됨</pre><div class="actions"><button class="secondary" id="inspect" type="button">현재 연결 정밀 진단</button><button class="secondary" id="stunprobe" type="button">독립 STUN 점검</button><button class="secondary" id="copylog" type="button">진단 로그 복사</button></div><div class="small">ICE 로그에는 실제 IP·mDNS 호스트명·SDP 원문을 기록하지 않음. 연결 실패 후보다 ICE checking 중 진단이 유효함. PeerJS 외부 라이브러리와 비교하려면 함께 제공된 direct_webrtc_test.html을 이용함.</div></details><div class="small">연결 실패 시 A·B가 50초 단위의 공통 시간 구간을 번갈아 사용해 연결을 요청함. 시계가 맞아야 하며, 기존 검증 채널은 역할 전환으로 중단하지 않음. 이번 버전은 자동 요청 방향 전환 및 ICE 후보의 주소 계열·mDNS·UDP/TCP와 SDP 협상 정보를 개인정보 없이 진단함. 후보가 ICE checking 중일 때 중복 요청으로 덮어쓰지 않으며, 진단 로그에 ICE 후보쌍의 검사 요청·응답 횟수를 표시함. 메시지는 로컬 보관 후 ACK를 확인함. 네트워크를 Wi-Fi ↔ LTE 전환 후 PING/PONG으로 상대방 응답을 확인함. 응답이 없으면 기존 채널을 폐기하고 자동으로 새 연결을 시도함. 백그라운드 메시지 수신은 보장하지 않음.</div></section>
 </main>
 <script>
 'use strict';
@@ -52,6 +52,8 @@ let retryTimer=null,pendingTimer=null,healthTimer=null,networkTimer=null,pending
 let candidate=null,candidateTimer=null,signalRetryTimer=null,signalRetryCount=0,connectionStartedAt=0,verifiedSession=0;
 let nextReconnectAt=0,lastFailure="",lastNetworkChangeAt=0,failures=0,connectSucceeded=0;
 let burstAttempts=0,attemptSerial=0,sessionLabel="",lastCandidateSummary="없음";
+let directionTimer=null,lastDirectionSlot=null;
+const DIRECTION_SLOT_MS=50000,DIRECTION_GUARD_MS=3000,DIRECTION_LAST_START_MS=19000;
 let pairProbeTimers=new Map(),iceProbeSerial=0,lastPairProbeSummary="검사 전";
 let verified=false,channelOpenedAt=0,lastPongAt=0,pingId='',pingSentAt=0,seq=0,connectAttempts=0;
 const PING_INTERVAL_MS=5000,PONG_TIMEOUT_MS=18000,VERIFY_TIMEOUT_MS=16000;
@@ -62,13 +64,37 @@ const pendingSends=new Map();let retryAttempts=0,ackedTotal=0,sessionConnectedAt
 const b64=a=>btoa(String.fromCharCode(...a)),fromB64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 function writeLog(s){const n=new Date().toLocaleTimeString('ko-KR',{hour12:false});const el=$('log');el.textContent=(''+el.textContent+'\n'+n+' '+s).split('\n').slice(-240).join('\n');el.scrollTop=el.scrollHeight;}
 function showState(s,mode='',detail=''){$('state').textContent=s;$('detail').textContent=detail;$('status').className='status '+mode;updateDiagnostics()}
-function updateDiagnostics(){const n=$('diag');if(!n)return;let ice='없음';try{ice=conn?.peerConnection?.iceConnectionState||candidate?.c?.peerConnection?.iceConnectionState||'없음'}catch{}n.textContent=`중개 ${peer?.open?'등록됨':peer?.disconnected?'재연결 중':'대기'} · 채널 ${verified?'검증됨':conn?.open?'확인 중':'대기'} · ICE ${ice} · 연결시도 ${connectAttempts} · 성공 ${connectSucceeded} · 실패 ${failures} · 후보 ${lastCandidateSummary} · 쌍검사 ${lastPairProbeSummary}${lastFailure?' · 최근 '+lastFailure:''}`}
+function updateDiagnostics(){const n=$('diag');if(!n)return;let ice='없음';try{ice=conn?.peerConnection?.iceConnectionState||candidate?.c?.peerConnection?.iceConnectionState||'없음'}catch{}n.textContent=`중개 ${peer?.open?'등록됨':peer?.disconnected?'재연결 중':'대기'} · 채널 ${verified?'검증됨':conn?.open?'확인 중':'대기'} · ICE ${ice} · 요청차례 ${directionOwner()} · 연결시도 ${connectAttempts} · 성공 ${connectSucceeded} · 실패 ${failures} · 후보 ${lastCandidateSummary} · 쌍검사 ${lastPairProbeSummary}${lastFailure?' · 최근 '+lastFailure:''}`}
 function noteFailure(msg){lastFailure=msg;failures++;writeLog('연결 문제: '+msg);updateDiagnostics()}
 function backoff(){const n=Math.min(burstAttempts,6);return Math.min(RETRY_CAP_MS,1900*Math.pow(1.5,n))+Math.floor(Math.random()*1300)}
+// Both phones use a shared wall-clock cycle, requiring no paid coordination server.
+// Never infer Wi-Fi/LTE from navigator.connection.effectiveType: that is not a trustworthy radio label.
+function directionSlot(){return Math.floor(Date.now()/DIRECTION_SLOT_MS)}
+function directionOwner(slot=directionSlot()){return slot%2===0?'A':'B'}
+function canInitiateNow(){const elapsed=Date.now()%DIRECTION_SLOT_MS;return directionOwner()===$('role').value&&elapsed>=DIRECTION_GUARD_MS&&elapsed<=DIRECTION_LAST_START_MS}
+function updateDirection(){
+ if(!active)return;
+ const slot=directionSlot(),owner=directionOwner(slot);
+ if(lastDirectionSlot!==slot){
+  const previous=lastDirectionSlot;lastDirectionSlot=slot;
+  writeLog('[자동 주도권] 이번 50초 구간: '+owner+'가 연결 요청 · 다른 쪽은 수신 (UTC 기준)');
+  // A failed ICE attempt from the prior slot must not block the new owner.
+  if(previous!==null&&!isConnected()&&candidate?.c){
+   const stale=candidate.c;candidate=null;if(pendingConn===stale)pendingConn=null;
+   clearTimeout(candidateTimer);candidateTimer=null;clearTimeout(pendingTimer);pendingTimer=null;
+   clearTimeout(retryTimer);retryTimer=null;
+   writeLog('[자동 주도권] 이전 구간의 미검증 연결 후보 정리');closeChannel(stale);
+  }
+  burstAttempts=0;
+ }
+ if(isConnected()||!peer?.open||pendingConn||candidate)return;
+ if(canInitiateNow()&&!retryTimer)scheduleConnect(200);
+}
+
 // 진단에는 후보 주소(IP)를 기록하지 않음. 유형/개수만 수집.
 // RTCStats API: candidate addresses/IPs are never included in diagnostics.
 // A snapshot is captured WHILE the PeerConnection is alive, before the timeout closes it.
-// V1.2.9: No IP addresses, actual mDNS hostnames, ICE passwords or SDP bodies in logs.
+// V1.3.0: No IP addresses, actual mDNS hostnames, ICE passwords or SDP bodies in logs.
 function parseCandidateLine(s){
  const line=String(s||'').trim();if(!line.startsWith('a=candidate:')&&!line.startsWith('candidate:'))return null;
  const a=line.replace(/^a=/,'').split(/\s+/),t=a.indexOf('typ');
@@ -192,8 +218,8 @@ function disconnected(reason){
  pendingSends.clear();closeChannel(old);
  $('message').disabled=false;$('send').disabled=false;
  showState('상대방 대기','','연결 복구 중 · 메시지는 기기에 보관');
- // Passive side always accepts an incoming peer; initiator requests again.
- if($('role').value==='A')scheduleConnect(backoff());
+ // Request ownership is derived from the current shared time slot.
+ scheduleConnect(backoff());
 }
 async function sendPacket(obj,c=conn){
  if(!active||!c?.open)return false;
@@ -274,19 +300,20 @@ function promoteCandidate(c){
  sendQueue(true);
 }
 function scheduleConnect(wait=2500){
- if(!active||$('role').value!=='A'||isConnected()||pendingConn||candidate)return;
+ if(!active||!canInitiateNow()||isConnected()||pendingConn||candidate)return;
  if(burstAttempts>=MAX_BURST_ATTEMPTS){
   wait=Math.max(wait,COOLDOWN_MS);burstAttempts=0;
   writeLog('반복 실패 방지: 5회 시도 후 30초 휴식 (중개 요청 폭주 방지)');
   showState('연결 재시도 대기','','30초 휴식 후 자동 시도 · 메시지는 기기 보관');
  }
  clearTimeout(retryTimer);const at=epoch;
- retryTimer=setTimeout(()=>{retryTimer=null;if(active&&at===epoch&&!isConnected()&&!pendingConn&&!candidate)connectOther()},Math.max(400,wait));
+ retryTimer=setTimeout(()=>{retryTimer=null;if(active&&at===epoch&&canInitiateNow()&&!isConnected()&&!pendingConn&&!candidate)connectOther()},Math.max(400,wait));
 }
 function attach(c){
  if(!active||!c)return;
  if(c.peer!==theirId){writeLog('예상하지 않은 상대 거부');closeChannel(c);return}
- if($('role').value==='A'&&c!==pendingConn){writeLog('A 역방향 연결 거부');closeChannel(c);return}
+ if(c!==pendingConn&&directionOwner()===$('role').value){writeLog('현재 요청 차례에는 역방향 연결 거부');closeChannel(c);return}
+ if(isConnected()){writeLog('기존 검증 채널 유지 · 추가 연결 거부');closeChannel(c);return}
  if(candidate?.c && candidate.c!==c){
   // ICE checking 중인 후보를 새 요청으로 조기 종료하면 두 기기의 협상이 계속 초기화될 수 있음.
   writeLog('중복 연결 요청 거부: 기존 후보의 협상 완료를 기다림');closeChannel(c);return;
@@ -300,7 +327,7 @@ function attach(c){
   if(!active||at!==epoch||candidate?.c!==c)return;
   // Capture stats before closing, otherwise the remote candidate count can become misleadingly zero.
   reportAttempt(c,'제한시간 초과(종료 전)');noteFailure('후보 채널 응답 제한 시간 초과');candidate=null;if(pendingConn===c)pendingConn=null;
-  closeChannel(c);if($('role').value==='A')scheduleConnect(backoff());
+  closeChannel(c);scheduleConnect(backoff());
  },CONNECT_TIMEOUT_MS);
  c.on('open',()=>{
   if(!active||at!==epoch||candidate?.c!==c)return;
@@ -311,12 +338,12 @@ function attach(c){
  });
  c.on('data',x=>receive(x,c));
  c.on('close',()=>{
-  if(candidate?.c===c){candidate=null;clearTimeout(candidateTimer);candidateTimer=null;if(pendingConn===c)pendingConn=null;if($('role').value==='A'&&!isConnected())scheduleConnect(backoff())}
+  if(candidate?.c===c){candidate=null;clearTimeout(candidateTimer);candidateTimer=null;if(pendingConn===c)pendingConn=null;if(!isConnected())scheduleConnect(backoff())}
   if(conn===c)disconnected('채널 종료');
  });
  c.on('error',e=>{
   noteFailure('채널 오류 '+(e.message||e));
-  if(candidate?.c===c){candidate=null;clearTimeout(candidateTimer);candidateTimer=null;if(pendingConn===c)pendingConn=null;closeChannel(c);if($('role').value==='A'&&!isConnected())scheduleConnect(backoff())}
+  if(candidate?.c===c){candidate=null;clearTimeout(candidateTimer);candidateTimer=null;if(pendingConn===c)pendingConn=null;closeChannel(c);if(!isConnected())scheduleConnect(backoff())}
   else if(conn===c)disconnected('채널 오류');
  });
  const pc=c.peerConnection;
@@ -327,10 +354,10 @@ function attach(c){
 
 }
 function connectOther(){
- if(!active||!peer?.open||isConnected()||pendingConn||candidate)return;
+ if(!active||!peer?.open||!canInitiateNow()||isConnected()||pendingConn||candidate)return;
  try{
   connectAttempts++;connectionStartedAt=Date.now();showState('상대방 찾는 중','','연결 시도 '+connectAttempts+'회');
-  burstAttempts++;const attempt=++attemptSerial;writeLog('[시도 '+attempt+'] A에서 연결 시작 → B 응답 대기');
+  burstAttempts++;const attempt=++attemptSerial;writeLog('[시도 '+attempt+'] '+$('role').value+'에서 연결 요청 → 상대 응답 대기 · 방향차례 '+directionOwner());
   const c=peer.connect(theirId,{reliable:true,serialization:'binary',metadata:{attempt,session:sessionLabel}});
   pendingConn=c;attach(c);
  }catch(e){noteFailure('연결 요청 실패 '+e.message);pendingConn=null;scheduleConnect(backoff())}
@@ -350,7 +377,7 @@ function bootPeer(reason='시작'){
   if(!active||run!==epoch)return;
   signalRetryCount=0;writeLog('중개 등록 완료 · 역할 '+$('role').value+' · 세션 '+sessionLabel);
   if(!isConnected())showState('상대방 대기','','연결 준비됨');
-  if($('role').value==='A')scheduleConnect(750);
+  updateDirection();
  });
  p.on('connection',c=>{if(!active||run!==epoch){closeChannel(c);return}attach(c)});
  p.on('disconnected',()=>{
@@ -404,7 +431,7 @@ function checkHealth(){
  }else if(conn){disconnected('채널 열림 상태 해제')}
  if(!peer||peer.destroyed){if(!isConnected())bootPeer('중개 객체 종료');return}
  if(peer.disconnected){if(!isConnected())scheduleSignalingRetry(peer,epoch)}
- else if(peer.open&&$('role').value==='A'&&!isConnected()&&!pendingConn&&!candidate&&!retryTimer)scheduleConnect(backoff());
+ else if(peer.open&&!isConnected())updateDirection();
 }
 async function start(){
  if(active)return;
@@ -414,11 +441,11 @@ async function start(){
   await initSecrets();active=true;connectAttempts=0;connectSucceeded=0;failures=0;burstAttempts=0;attemptSerial=0;lastFailure='';lastCandidateSummary='없음';lastPairProbeSummary='검사 전';
   $('start').disabled=true;$('role').disabled=true;$('room').disabled=true;$('pin').disabled=true;
   $('message').disabled=false;$('send').disabled=false;
-  updateQueueStatus();writeLog('자동 연결 시작 ('+$('role').value+') · 로컬 대기 '+getQueue().length+'건');writeLog('[환경] '+networkInfo());bootPeer();healthTimer=setInterval(checkHealth,PING_INTERVAL_MS)
+  updateQueueStatus();writeLog('자동 연결 시작 ('+$('role').value+') · 로컬 대기 '+getQueue().length+'건');writeLog('[환경] '+networkInfo());bootPeer();lastDirectionSlot=null;directionTimer=setInterval(updateDirection,1000);healthTimer=setInterval(checkHealth,PING_INTERVAL_MS)
  }catch(e){writeLog('시작 실패: '+e.message);showState(e.message,'bad')}
 }
 function stop(){
- active=false;epoch++;clearTimers();clearInterval(healthTimer);healthTimer=null;clearTimeout(networkTimer);networkTimer=null;
+ active=false;epoch++;clearTimers();clearInterval(directionTimer);directionTimer=null;lastDirectionSlot=null;clearInterval(healthTimer);healthTimer=null;clearTimeout(networkTimer);networkTimer=null;
  const old=conn,oldPending=pendingConn,oldCandidate=candidate?.c,oldPeer=peer;conn=null;pendingConn=null;candidate=null;peer=null;verified=false;pingId='';
  closeChannel(old);if(oldPending!==old)closeChannel(oldPending);if(oldCandidate!==old&&oldCandidate!==oldPending)closeChannel(oldCandidate);try{oldPeer?.destroy()}catch{}
  cryptoKey=null;$('start').disabled=false;$('role').disabled=false;$('room').disabled=false;$('pin').disabled=false;
@@ -455,13 +482,13 @@ function networkRecovery(reason){
    if(pingId){pingSentAt=Math.min(pingSentAt,Date.now()-13000)}
    else sendPing(conn);
    setTimeout(()=>{if(active&&conn?.open&&pingId&&Date.now()-pingSentAt>6500)disconnected('통신망 변경 후 응답 실패')},7500)
-  }else if(!isConnected()&&$('role').value==='A')scheduleConnect(600);
+  }else if(!isConnected())updateDirection();
   updateDiagnostics();
  },1200)
 }
 $('inspect').onclick=()=>{writeLog('[수동 진단] '+networkInfo());const c=candidate?.c||conn;if(c){logSdpSnapshot(c,'수동');iceSummary(c,'수동')}else writeLog('[수동 진단] 연결 후보 없음. 연결 시작 후 ICE checking 중 다시 실행');};$('stunprobe').onclick=runIndependentStunProbe;
 $('start').onclick=start;$('stop').onclick=stop;$('retry').onclick=restart;$('send').onclick=send;
-$('copylog').onclick=async()=>{const body='Secret Mailbox V1.2.9\n'+$('diag').textContent+'\n'+$('log').textContent;try{await navigator.clipboard.writeText(body);writeLog('진단 로그 복사 완료')}catch{writeLog('클립보드 복사 실패: HTTPS·권한 확인')}};
+$('copylog').onclick=async()=>{const body='Secret Mailbox V1.3.0\n'+$('diag').textContent+'\n'+$('log').textContent;try{await navigator.clipboard.writeText(body);writeLog('진단 로그 복사 완료')}catch{writeLog('클립보드 복사 실패: HTTPS·권한 확인')}};
 $('message').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();send()}});
 window.addEventListener('online',()=>networkRecovery('인터넷 재연결'));
 if(navigator.connection?.addEventListener)navigator.connection.addEventListener('change',()=>networkRecovery('인터넷 접속 유형 변경'));
