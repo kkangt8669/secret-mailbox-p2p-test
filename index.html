@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#b9cddd">
-<title>Secret Mailbox · 자동 P2P 시험판 V1.2.2</title>
+<title>Secret Mailbox · 자동 P2P 시험판 V1.2.3</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#bbcfdd;color:#223342;font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;font-size:14px}
 main{max-width:620px;min-height:100dvh;margin:auto;padding:18px 14px 30px}
@@ -25,7 +25,7 @@ summary{cursor:pointer;font-weight:700;padding:5px 0}pre{white-space:pre-wrap;ov
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
 </head>
 <body><main>
-<div class="header"><div class="brand">SM</div><div><h1>Secret Mailbox · P2P 자동 연결 시험 V1.2.2</h1><div class="sub">Wi-Fi ↔ 4G·5G · 연결 정보 복사 불필요</div></div></div>
+<div class="header"><div class="brand">SM</div><div><h1>Secret Mailbox · P2P 자동 연결 시험 V1.2.3</h1><div class="sub">Wi-Fi ↔ 4G·5G · 연결 정보 복사 불필요</div></div></div>
 <section class="card">
 <h2>① 두 스마트폰 설정</h2>
 <div class="grid"><div><label for="room">방 번호</label><input id="room" inputmode="numeric" value="1001" maxlength="16"></div><div><label for="role">내 스마트폰 역할</label><select id="role"><option value="A">A · 첫 번째</option><option value="B">B · 두 번째</option></select></div></div>
@@ -46,7 +46,7 @@ summary{cursor:pointer;font-weight:700;padding:5px 0}pre{white-space:pre-wrap;ov
 <script>
 'use strict';
 const $=id=>document.getElementById(id),enc=new TextEncoder(),dec=new TextDecoder();
-let peer=null,conn=null,cryptoKey=null,active=false,roomStore='',myId='',theirId='',epoch=0,retryTimer=null,healthTimer=null,sendLock=false;
+let peer=null,conn=null,cryptoKey=null,active=false,roomStore='',myId='',theirId='',epoch=0,retryTimer=null,healthTimer=null,pendingConn=null,pendingTimer=null,sendLock=false;
 const b64=a=>btoa(String.fromCharCode(...a)),fromB64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 function writeLog(s){const n=new Date().toLocaleTimeString('ko-KR',{hour12:false});$('log').textContent+='\n'+n+' '+s;$('log').scrollTop=$('log').scrollHeight;}
 function showState(s,mode='',detail=''){$('state').textContent=s;$('detail').textContent=detail;$('status').className='status '+mode}
@@ -72,37 +72,105 @@ async function receive(data){try{const x=await decrypt(data);if(x.type==='msg'&&
  if(conn?.open)conn.send(await encrypt({type:'ack',id:x.id}));
  }else if(x.type==='ack'&&typeof x.id==='string'){const q=getQueue();if(q.some(m=>m.id===x.id)){setQueue(q.filter(m=>m.id!==x.id));bubble('전달 확인 ✓','sys');writeLog('수신 ACK '+x.id.slice(0,8))}}
  }catch(e){writeLog('수신 처리 오류: '+e.message)}}
-function attach(c){if(!active||!c)return;if(c.peer!==theirId){writeLog('예상하지 않은 연결 거부');c.close();return}
- if(conn&&conn!==c){try{conn.close()}catch{}}conn=c;
- c.on('open',()=>{if(!active||conn!==c)return;showState('P2P 연결 성공','good','DataChannel: open');writeLog('[CONNECTED] 직접 메시지 채널 열림');$('message').disabled=false;$('send').disabled=false;sendQueue()});
+function isConnected(){return !!(conn&&conn.open)}
+function clearPending(){clearTimeout(pendingTimer);pendingTimer=null;pendingConn=null;clearTimeout(retryTimer);retryTimer=null}
+function attach(c){
+ if(!active||!c)return;
+ if(c.peer!==theirId){writeLog('예상하지 않은 연결 거부');c.close();return}
+ // Connected DataChannel must never be replaced by a speculative retry.
+ if(isConnected()&&conn!==c){writeLog('중복 연결 요청 무시 (기존 채널 유지)');c.close();return}
+ if(conn&&conn!==c&&!conn.open){try{conn.close()}catch{}}
+ conn=c;
+ c.on('open',()=>{
+  if(!active||conn!==c)return;
+  clearPending();showState('P2P 연결 성공','good','DataChannel: open');
+  writeLog('[CONNECTED] 직접 메시지 채널 열림');
+  $('message').disabled=false;$('send').disabled=false;sendQueue();
+ });
  c.on('data',receive);
- c.on('close',()=>{if(!active||conn!==c)return;conn=null;showState('연결 대기','', '다시 연결 시도 중');writeLog('DataChannel 종료');if($('role').value==='A')scheduleConnect(1000)});
+ c.on('close',()=>{
+  if(!active||conn!==c)return;
+  conn=null;clearPending();showState('연결 대기','','다시 연결 시도 중');
+  writeLog('DataChannel 종료');if($('role').value==='A')scheduleConnect(1500);
+ });
  c.on('error',err=>writeLog('DataChannel 오류: '+(err.message||err)));
 }
-function scheduleConnect(wait=2500){clearTimeout(retryTimer);if(!active||$('role').value!=='A')return;const at=epoch;retryTimer=setTimeout(()=>{if(active&&at===epoch)connectOther()},wait)}
-function connectOther(){if(!active||!peer?.open)return;if(conn?.open)return;try{showState('상대방 찾는 중','', 'A → B 연결 요청');const c=peer.connect(theirId,{reliable:true,serialization:'binary'});attach(c);scheduleConnect(4500)}catch(e){writeLog('연결 시도: '+e.message);scheduleConnect(4500)}}
-function bootPeer(){if(!active)return;const run=++epoch;clearTimeout(retryTimer);try{peer?.destroy()}catch{}conn=null;
+function scheduleConnect(wait=2500){
+ if(!active||$('role').value!=='A'||isConnected()||pendingConn)return;
+ clearTimeout(retryTimer);const at=epoch;
+ retryTimer=setTimeout(()=>{retryTimer=null;if(active&&at===epoch&&!isConnected()&&!pendingConn)connectOther()},wait);
+}
+function connectOther(){
+ if(!active||!peer?.open||isConnected()||pendingConn)return;
+ try{
+  showState('상대방 찾는 중','','A → B 연결 요청');
+  const c=peer.connect(theirId,{reliable:true,serialization:'binary'});
+  pendingConn=c;attach(c);
+  // Wait for ICE setup without creating another channel in parallel.
+  const at=epoch;
+  pendingTimer=setTimeout(()=>{
+   if(!active||at!==epoch||isConnected()||pendingConn!==c)return;
+   writeLog('연결 응답 지연 → 다음 시도');
+   pendingConn=null;pendingTimer=null;
+   if(conn===c)conn=null;
+   try{c.close()}catch{}
+   scheduleConnect(2500);
+  },12000);
+ }catch(e){writeLog('연결 시도: '+e.message);pendingConn=null;scheduleConnect(4500)}
+}
+function bootPeer(){
+ if(!active||isConnected())return;
+ const run=++epoch;clearPending();
+ try{peer?.destroy()}catch{}conn=null;
  showState('연결 중개 서버 접속 중','','서버: 공개 시험망');
- if(typeof Peer==='undefined'){showState('프로그램 로드 실패','bad','PeerJS 라이브러리 불러오기 실패');writeLog('PeerJS 스크립트를 불러오지 못함. 네트워크 차단 또는 CDN 장애 확인');return}
+ if(typeof Peer==='undefined'){
+  showState('프로그램 로드 실패','bad','PeerJS 라이브러리 불러오기 실패');
+  writeLog('PeerJS 스크립트를 불러오지 못함. 네트워크 차단 또는 CDN 장애 확인');return
+ }
  peer=new Peer(myId,{secure:true,host:'0.peerjs.com',port:443,path:'/',config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}],iceTransportPolicy:'all'}});
  const p=peer;
- p.on('open',id=>{if(!active||run!==epoch)return;writeLog('연결 중개 등록 완료');showState('상대방 대기','', 'P2P 연결 준비');if($('role').value==='A')scheduleConnect(200)});
- p.on('connection',c=>{if(!active||run!==epoch){c.close();return}attach(c)});
- p.on('disconnected',()=>{if(!active||run!==epoch)return;writeLog('연결 중개 서버 접속 끊김');showState('재연결 시도 중','','중개 서버 재접속');setTimeout(()=>{if(active&&run===epoch){try{p.reconnect()}catch{bootPeer()}}},2500)});
- p.on('close',()=>{if(active&&run===epoch){writeLog('Peer 세션 닫힘');setTimeout(()=>{if(active&&run===epoch)bootPeer()},4000)}});
- p.on('error',err=>{if(!active||run!==epoch)return;const t=err?.type||'error';writeLog('연결 오류: '+t+' / '+(err.message||''));if(t==='peer-unavailable'){scheduleConnect(3500);return}
- if(t==='unavailable-id'){showState('기존 세션 남아 있음','bad','잠시 후 다시 연결');setTimeout(()=>{if(active&&run===epoch)bootPeer()},5500);return}
- if(t==='network'||t==='socket-error'||t==='server-error'){showState('연결 중개 오류','bad','자동 재시도 중');setTimeout(()=>{if(active&&run===epoch)bootPeer()},5500);return}
- showState('연결 오류','bad',t)});
+ p.on('open',id=>{
+  if(!active||run!==epoch)return;
+  writeLog('연결 중개 등록 완료');
+  if(!isConnected())showState('상대방 대기','','P2P 연결 준비');
+  if($('role').value==='A')scheduleConnect(500)
+ });
+ p.on('connection',c=>{
+  if(!active||run!==epoch){c.close();return}attach(c)
+ });
+ p.on('disconnected',()=>{
+  if(!active||run!==epoch)return;
+  writeLog('연결 중개 서버 접속 끊김'+(isConnected()?' (P2P 채널 유지)':''));
+  // Signaling disconnect does not mean the P2P DataChannel is disconnected.
+  if(!isConnected())showState('중개 서버 재접속 중','','P2P 연결 재준비');
+  setTimeout(()=>{if(active&&run===epoch&&!p.destroyed&&p.disconnected){try{p.reconnect()}catch{if(!isConnected())bootPeer()}}},2500)
+ });
+ p.on('close',()=>{
+  if(active&&run===epoch&&!isConnected()){
+   writeLog('Peer 세션 닫힘');setTimeout(()=>{if(active&&run===epoch&&!isConnected())bootPeer()},4000)
+  }
+ });
+ p.on('error',err=>{
+  if(!active||run!==epoch)return;
+  const t=err?.type||'error';writeLog('연결 오류: '+t+' / '+(err.message||''));
+  if(isConnected())return;
+  if(t==='peer-unavailable'){clearPending();scheduleConnect(3500);return}
+  if(t==='unavailable-id'){showState('기존 세션 남아 있음','bad','잠시 후 다시 연결');setTimeout(()=>{if(active&&run===epoch&&!isConnected())bootPeer()},5500);return}
+  if(t==='network'||t==='socket-error'||t==='server-error'){
+   showState('연결 중개 오류','bad','자동 재시도 중');
+   setTimeout(()=>{if(active&&run===epoch&&!isConnected())bootPeer()},5500);return
+  }
+  showState('연결 오류','bad',t)
+ });
 }
-async function start(){if(active)return;try{if(!crypto?.subtle)throw Error('HTTPS 페이지에서 실행해야 함');if(typeof Peer==='undefined')throw Error('PeerJS 라이브러리를 불러오지 못함. 잠시 후 새로고침');await initSecrets();active=true;$('start').disabled=true;$('role').disabled=true;$('room').disabled=true;$('pin').disabled=true;$('message').disabled=false;$('send').disabled=false;writeLog('자동 연결 시작: '+$('role').value);bootPeer();healthTimer=setInterval(()=>{if(!active)return;if(!peer||peer.destroyed){bootPeer();return}if(!peer.open&&peer.disconnected){try{peer.reconnect()}catch{bootPeer()}}else if(peer.open&&$('role').value==='A'&&!conn?.open&&!retryTimer)scheduleConnect(500)},6000)}catch(e){writeLog('시작 실패: '+e.message);showState(e.message,'bad');}}
-function stop(){active=false;epoch++;clearTimeout(retryTimer);retryTimer=null;clearInterval(healthTimer);healthTimer=null;try{conn?.close()}catch{}try{peer?.destroy()}catch{}conn=null;peer=null;cryptoKey=null;$('start').disabled=false;$('role').disabled=false;$('room').disabled=false;$('pin').disabled=false;$('message').disabled=true;$('send').disabled=true;showState('종료','','연결 안 됨');writeLog('종료. 로컬 미전송 메시지 보존')}
+async function start(){if(active)return;try{if(!crypto?.subtle)throw Error('HTTPS 페이지에서 실행해야 함');if(typeof Peer==='undefined')throw Error('PeerJS 라이브러리를 불러오지 못함. 잠시 후 새로고침');await initSecrets();active=true;$('start').disabled=true;$('role').disabled=true;$('room').disabled=true;$('pin').disabled=true;$('message').disabled=false;$('send').disabled=false;writeLog('자동 연결 시작: '+$('role').value);bootPeer();healthTimer=setInterval(()=>{if(!active)return;if(isConnected())return;if(!peer||peer.destroyed){bootPeer();return}if(!peer.open&&peer.disconnected){try{peer.reconnect()}catch{bootPeer()}}else if(peer.open&&$('role').value==='A'&&!isConnected()&&!retryTimer&&!pendingConn)scheduleConnect(1000)},6000)}catch(e){writeLog('시작 실패: '+e.message);showState(e.message,'bad');}}
+function stop(){active=false;epoch++;clearPending();clearInterval(healthTimer);healthTimer=null;try{conn?.close()}catch{}try{peer?.destroy()}catch{}conn=null;peer=null;cryptoKey=null;$('start').disabled=false;$('role').disabled=false;$('room').disabled=false;$('pin').disabled=false;$('message').disabled=true;$('send').disabled=true;showState('종료','','연결 안 됨');writeLog('종료. 로컬 미전송 메시지 보존')}
 async function restart(){if(active)stop();await start()}
 async function send(){if(!active||!cryptoKey)return;const text=$('message').value.trim();if(!text)return;try{const id=crypto.randomUUID(),packet=await encrypt({type:'msg',id,text});const q=getQueue();q.push({id,packet});setQueue(q);bubble(text,'mine');$('message').value='';if(conn?.open){conn.send(packet);writeLog('P2P 전송 '+id.slice(0,8))}else{writeLog('오프라인 대기 '+id.slice(0,8));bubble('연결 대기 · 기기에 저장됨','sys')}}catch(e){writeLog('전송 실패: '+e.message)}}
 $('start').onclick=start;$('stop').onclick=stop;$('retry').onclick=restart;$('send').onclick=send;$('message').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();send()}});
-window.addEventListener('online',()=>{if(active){writeLog('인터넷 연결 이벤트 → 자동 재연결');bootPeer()}});
-if(navigator.connection?.addEventListener)navigator.connection.addEventListener('change',()=>{if(active){writeLog('네트워크 변경 감지 → 재연결');setTimeout(()=>{if(active)bootPeer()},800)}});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active){writeLog('화면 복귀 → 연결 점검');if(!conn?.open)bootPeer()}});
+window.addEventListener('online',()=>{if(active&&!isConnected()){writeLog('인터넷 연결 이벤트 → 자동 재연결');bootPeer()}});
+if(navigator.connection?.addEventListener)navigator.connection.addEventListener('change',()=>{if(active){writeLog('네트워크 변경 감지'+(isConnected()?' · 기존 채널 상태 확인':' → 재연결'));setTimeout(()=>{if(active&&!isConnected())bootPeer()},1200)}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&active){writeLog('화면 복귀 → 연결 점검');if(!isConnected())bootPeer()}});
 window.addEventListener('pagehide',()=>{try{conn?.close();peer?.destroy()}catch{}});
 </script>
 </body></html>
